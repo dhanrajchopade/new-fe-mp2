@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import useFetch from '../useFetch';
 
@@ -6,10 +6,13 @@ const LeadManagement = () => {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  // Fetch lead details (including comments)
+  // Fetch lead details
   const { data: lead, loading, error, refetch } = useFetch(`https://lead-management-be-mp-2.vercel.app/leads/${id}`);
   // Fetch all agents for mapping agentId to agent name
   const { data: agents } = useFetch('https://lead-management-be-mp-2.vercel.app/sales-agents');
+  // Fetch all comments
+  const { data: allComments, loading: commentsLoading } = useFetch('https://lead-management-be-mp-2.vercel.app/comments');
+
   const [newComment, setNewComment] = useState('');
   const [commentLoading, setCommentLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -21,30 +24,37 @@ const LeadManagement = () => {
     agentIdToName[agent._id] = agent.name;
   });
 
+  // Filter comments for this lead
+  const leadComments = Array.isArray(allComments) && lead && lead.comments
+    ? allComments.filter(comment => lead.comments.includes(comment._id))
+    : [];
+
   // Handle adding a new comment
-  const handleAddComment = async () => {
-    if (!newComment.trim()) {
-      alert('Comment cannot be empty.');
-      return;
-    }
-    setCommentLoading(true);
-    try {
-      const response = await fetch(`https://lead-management-be-mp-2.vercel.app/leads/${id}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commentText: newComment }),
-      });
-      if (response.ok) {
-        setNewComment('');
-        if (typeof refetch === 'function') refetch(); // Refresh lead data to get new comments
-      } else {
-        alert('Failed to add comment.');
-      }
-    } catch {
+ const handleAddComment = async () => {
+  if (!newComment.trim()) {
+    alert('Comment cannot be empty.');
+    return;
+  }
+  setCommentLoading(true);
+  try {
+    // Use the correct endpoint to link the comment to the lead
+    const response = await fetch(`https://lead-management-be-mp-2.vercel.app/leads/${id}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commentText: newComment }),
+    });
+    if (response.ok) {
+      setNewComment('');
+      if (typeof refetch === 'function') refetch();
+      window.location.reload();
+    } else {
       alert('Failed to add comment.');
     }
-    setCommentLoading(false);
-  };
+  } catch {
+    alert('Failed to add comment.');
+  }
+  setCommentLoading(false);
+};
 
   // Handle deleting the lead
   const handleDeleteLead = async () => {
@@ -66,7 +76,7 @@ const LeadManagement = () => {
     }
   };
 
-  if (loading || !agents) return <p>Loading...</p>;
+  if (loading || !agents || commentsLoading) return <p>Loading...</p>;
   if (error || !lead) return <p>{error || 'No lead found.'}</p>;
 
   return (
@@ -127,23 +137,28 @@ const LeadManagement = () => {
         {/* Comments Section */}
         <div style={{ marginBottom: '2rem', border: '1px solid #ddd', padding: '1rem' }}>
           <h3>Comments Section</h3>
-          {lead.comments && lead.comments.map((comment, index) => (
-            <div key={index} style={{ marginBottom: '1rem', borderBottom: '1px solid #ccc', paddingBottom: '0.5rem' }}>
-              <p>
-                <strong>Comment:</strong> {comment.commentText}
-                {comment.author && (
-                  <span style={{ marginLeft: 8, color: '#888' }}>
-                    — {comment.author.name}
-                  </span>
-                )}
-              </p>
-              {comment.createdAt && (
-                <p style={{ fontSize: '0.85em', color: '#888' }}>
-                  {new Date(comment.createdAt).toLocaleString()}
+          {leadComments.length > 0 ? (
+            leadComments.map((comment, index) => (
+              <div key={index} style={{ marginBottom: '1rem', borderBottom: '1px solid #ccc', paddingBottom: '0.5rem' }}>
+                <p>
+                  <strong>Comment:</strong> {comment.commentText}
+                  {comment.author && (
+                    <span style={{ marginLeft: 8, color: '#888' }}>
+                      — {comment.author.name}
+                    </span>
+                  )}
                 </p>
-              )}
-            </div>
-          ))}
+                {comment.createdAt && (
+                  <p style={{ fontSize: '0.85em', color: '#888' }}>
+                    {new Date(comment.createdAt).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            ))
+          ) : (
+            <p style={{ color: '#888' }}>No comments</p>
+          )}
+
           <textarea
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
